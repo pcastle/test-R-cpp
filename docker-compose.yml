@@ -1,0 +1,11 @@
+services:
+  dev-env:
+    build: .
+    container_name: cpp-r-env
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    volumes:
+      - .:/Workspace
+    stdin_open: true
+    tty: true

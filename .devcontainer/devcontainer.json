@@ -1,0 +1,14 @@
+{
+    "name": "test-R-cpp",
+    "dockerComposeFile": "../docker-compose.yml",
+    "service": "dev-env",
+    "workspaceFolder": "/Workspace",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "REditorSupport.r",
+                "ms-vscode.cpptools"
+            ]
+        }
+    }
+}
