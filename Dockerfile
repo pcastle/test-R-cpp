@@ -4,7 +4,7 @@ FROM rocker/r-base:4.5.2
 RUN apt-get update && apt-get install -y \
     g++ gcc cmake make \
     libcurl4-openssl-dev \
-    libssl-dev \
+    libssl-dev libeigen3-dev \
     libxml2-dev \
     git \
     && apt-get clean \

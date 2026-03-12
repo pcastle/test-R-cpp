@@ -101,3 +101,28 @@ double correlation(const std::vector<double> &x, const std::vector<double> &y)
     double result = covariance(x, mean_x, y, mean_y) / (std_desv(x, mean_x) * std_desv(y, mean_y));
     return result;
 }
+
+std::unique_ptr<double[]> rnorm_generator(int n, double mu, double sigma)
+{
+    if (n <= 0 || sigma <= 0)
+    {
+        throw std::invalid_argument("Error: 'n' and 'sigma' must be positive!");
+    }
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::normal_distribution<double> dist(mu, sigma);
+
+    auto data = std::make_unique<double[]>(n);
+
+    for (int i = 0; i < n; i++)
+    {
+        data[i] = dist(gen);
+    }
+
+    return data;
+}
+
+Eigen::VectorXd ols(const Eigen::MatrixXd &X, const Eigen::VectorXd &y)
+{
+    return ((X.transpose() * X).inverse() * X.transpose()) * (y);
+}
