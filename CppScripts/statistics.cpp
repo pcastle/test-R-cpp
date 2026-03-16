@@ -102,6 +102,21 @@ double correlation(const std::vector<double> &x, const std::vector<double> &y)
     return result;
 }
 
+std::unique_ptr<double[]> runiform_generator(int n, double a, double b){
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+
+    auto data = std::make_unique<double[]>(n);
+
+    for (int i = 0; i < n; i++)
+    {
+        data[i] = a + dist(gen)*(b - a);
+    }
+
+    return data;
+}
+
 std::unique_ptr<double[]> rnorm_generator(int n, double mu, double sigma)
 {
     if (n <= 0 || sigma <= 0)

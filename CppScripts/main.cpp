@@ -1,5 +1,6 @@
 #include "statistics.h"
 #include <iomanip>
+#include "mle.h"
 
 int main()
 {
@@ -82,6 +83,26 @@ int main()
     Eigen::VectorXd beta = ols(X, y1);
     std::cout << "beta_0 (intercepto): " << beta(0) << "\n"; // ≈ 1
     std::cout << "beta_1 (pendiente):  " << beta(1) << "\n"; // ≈ 2
+
+    // Generar datos N(3.0, 1.5)
+    auto raw = rnorm_generator(500, 3.0, 1.5);
+    std::vector<double> data(raw.get(), raw.get() + 500);
+
+    // Función objetivo: bind los datos al neg_log_likelihood
+    auto f = [&data](const Eigen::VectorXd &p)
+    {
+        return neg_log_likelihood_normal(p, data);
+    };
+
+    // Punto inicial alejado de la verdad
+    Eigen::VectorXd theta_init(2);
+    theta_init << mean(data), std_desv(data);
+
+    Eigen::VectorXd theta_hat = newton_raphson(f, theta_init);
+
+    std::cout << "n = " << std::setw(6) << n
+              << "  mu = " << std::setprecision(4) << theta_hat(0)
+              << "  sigma = " << theta_hat(1) << "\n";
 
     return 0;
 }
