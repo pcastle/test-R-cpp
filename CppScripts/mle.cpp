@@ -189,8 +189,51 @@ Eigen::VectorXd genetic_algorithm(
         prev_best_variables = population.row(new_best_idx).transpose();
         if (i > 0 && delta < params.tol)
         {
-            std::cout << "Convergió en generación " << i << "\n";
+            // std::cout << "Convergió en generación " << i << "\n";
             return population.row(new_best_idx).transpose();
+        }
+    }
+
+    throw std::runtime_error("No convergetion");
+}
+
+Eigen::VectorXd levenberg_marquardt(
+    std::function<double(const Eigen::VectorXd &)> f,
+    Eigen::VectorXd theta_init,
+    const LMParams &params)
+{
+
+    double lambda = params.lambda0;
+    for (int i = 0; i < params.max_iter; i++)
+    {
+        Eigen::VectorXd numerical_gradient = gradient(f, theta_init);
+        Eigen::MatrixXd numerical_hessian = hessian(f, theta_init);
+        Eigen::MatrixXd regularization = numerical_hessian + Eigen::MatrixXd::Identity(theta_init.size(), theta_init.size()) * lambda;
+
+        Eigen::VectorXd new_theta = theta_init - regularization.colPivHouseholderQr().solve(numerical_gradient);
+
+        double prev_value = f(theta_init);
+        double new_value = f(new_theta);
+        if (new_value <= prev_value)
+        {
+            // Aceptar paso
+            lambda *= params.lambda_dn;
+
+            // Convergencia — solo cuando aceptamos
+            if ((new_theta - theta_init).norm() < params.tol)
+            {
+                // std::cout << "LM convergió en iteración " << i << "\n";
+                return new_theta;
+            }
+
+            theta_init = new_theta; // ← solo aquí
+        }
+        else
+        {
+            // Rechazar paso — NO actualizar theta
+            lambda *= params.lambda_up;
+            if (lambda > params.lambda_max)
+                throw std::runtime_error("LM: lambda máximo alcanzado");
         }
     }
 

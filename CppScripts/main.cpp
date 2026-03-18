@@ -1,5 +1,6 @@
 #include "statistics.h"
 #include <iomanip>
+#include <sstream>
 #include "mle.h"
 
 int main()
@@ -84,62 +85,202 @@ int main()
     std::cout << "beta_0 (intercepto): " << beta(0) << "\n"; // ≈ 1
     std::cout << "beta_1 (pendiente):  " << beta(1) << "\n"; // ≈ 2
 
-    // Generar datos N(3.0, 1.5)
-    auto raw = rnorm_generator(500, 3.0, 1.5);
-    std::vector<double> data(raw.get(), raw.get() + 500);
+    // ─── Datos ────────────────────────────────────────────────────────────
+    const double TRUE_MU = 3.0;
+    const double TRUE_SIGMA = 1.5;
+    const int N = 500;
 
-    // Función objetivo: bind los datos al neg_log_likelihood
+    auto raw = rnorm_generator(N, TRUE_MU, TRUE_SIGMA);
+    std::vector<double> data(raw.get(), raw.get() + N);
+
     auto f = [&data](const Eigen::VectorXd &p)
     {
         return neg_log_likelihood_normal(p, data);
     };
 
-    // Punto inicial alejado de la verdad
-    Eigen::VectorXd theta_init(2);
-    theta_init << mean(data), std_desv(data);
-
-    Eigen::VectorXd theta_hat = newton_raphson(f, theta_init);
-
-    std::cout << "n = " << std::setw(6) << n
-              << "  mu = " << std::setprecision(4) << theta_hat(0)
-              << "  sigma = " << theta_hat(1) << "\n";
-
-    // ─── Algoritmo Genético ───────────────────────────────────────────────
+    // ─── Bounds para GA ───────────────────────────────────────────────────
     Eigen::VectorXd lower(2), upper(2);
     lower << -10.0, 0.01;
     upper << 10.0, 10.0;
-    Eigen::VectorXd theta0(2);
-    theta0 << 0.0, 1.0;
 
     GAParams ga_params;
-    // Puedes modificar los parámetros o dejar los defaults
     ga_params.population_size = 200;
     ga_params.max_generations = 1000;
-    ga_params.tol = 1e-15;
-    ga_params.mutation_scale = 1;
-    // ga_params.mutation_rate   = 0.2;
+    ga_params.tol = 1e-8;
 
-    try
+    LMParams lm_params;
+
+    // ─── Helper para imprimir una fila ────────────────────────────────────
+    auto print_row = [&](const std::string &method,
+                         bool ok,
+                         double mu, double sigma)
     {
-        auto theta_ga = genetic_algorithm(f, lower, upper, ga_params);
-        std::cout << "=== Algoritmo Genético ===\n";
-        std::cout << "  mu    = " << theta_ga(0) << "  (verdadero: 3.0)\n";
-        std::cout << "  sigma = " << theta_ga(1) << "  (verdadero: 1.5)\n\n";
-    }
-    catch (const std::exception &e)
+        std::cout << std::left << std::setw(20) << method
+                  << std::right << std::fixed << std::setprecision(4);
+        if (ok)
+        {
+            std::cout << std::setw(10) << mu
+                      << std::setw(10) << sigma
+                      << std::setw(12) << std::abs(mu - TRUE_MU)
+                      << std::setw(12) << std::abs(sigma - TRUE_SIGMA)
+                      << std::setw(8) << "OK";
+        }
+        else
+        {
+            std::cout << std::setw(10) << "—"
+                      << std::setw(10) << "—"
+                      << std::setw(12) << "—"
+                      << std::setw(12) << "—"
+                      << std::setw(8) << "FALLÓ";
+        }
+        std::cout << "\n";
+    };
+
+    auto print_header = [&](const std::string &title)
     {
-        std::cout << "Genético falló: " << e.what() << "\n\n";
+        std::cout << "\n=== " << title << " ===\n";
+        std::cout << std::left << std::setw(20) << "Método"
+                  << std::right << std::setw(10) << "mu"
+                  << std::setw(10) << "sigma"
+                  << std::setw(12) << "err_mu"
+                  << std::setw(12) << "err_sigma"
+                  << std::setw(8) << "estado"
+                  << "\n"
+                  << std::string(72, '-') << "\n";
+    };
+
+    // ─── Comparación con distintos puntos iniciales ───────────────────────
+    std::vector<std::pair<std::string, Eigen::VectorXd>> theta_inits;
+
+    Eigen::VectorXd t1(2);
+    t1 << 0.0, 1.0;
+    theta_inits.push_back({"Punto inicial bueno (0, 1)", t1});
+    Eigen::VectorXd t2(2);
+    t2 << 10.0, 5.0;
+    theta_inits.push_back({"Punto inicial malo (10, 5)", t2});
+    Eigen::VectorXd t3(2);
+    t3 << -5.0, 0.1;
+    theta_inits.push_back({"Punto inicial malo (-5, 0.1)", t3});
+
+    for (auto &[title, theta0] : theta_inits)
+    {
+        print_header(title);
+
+        // Newton-Raphson
+        try
+        {
+            auto nr = newton_raphson(f, theta0);
+            print_row("Newton-Raphson", true, nr(0), nr(1));
+        }
+        catch (...)
+        {
+            print_row("Newton-Raphson", false, 0, 0);
+        }
+
+        // Levenberg-Marquardt
+        try
+        {
+            auto lm = levenberg_marquardt(f, theta0, lm_params);
+            print_row("Levenberg-M", true, lm(0), lm(1));
+        }
+        catch (...)
+        {
+            print_row("Levenberg-M", false, 0, 0);
+        }
+
+        // Genético (no usa punto inicial)
+        try
+        {
+            auto ga = genetic_algorithm(f, lower, upper, ga_params);
+            print_row("Genético", true, ga(0), ga(1));
+        }
+        catch (...)
+        {
+            print_row("Genético", false, 0, 0);
+        }
     }
 
-    // ─── Comparación ─────────────────────────────────────────────────────
-    // Correr ambos 10 veces y comparar resultados
-    std::cout << "=== Estabilidad (10 corridas) ===\n";
-    std::cout << std::fixed << std::setprecision(4);
-    std::cout << "  Run   NR_mu   NR_sigma   GA_mu   GA_sigma\n";
+    // ─── Estabilidad: 10 corridas con punto inicial malo ─────────────────
+    std::cout << "\n=== Estabilidad (10 corridas, punto inicial (10, 5)) ===\n";
+    std::cout << std::left << std::setw(5) << "Run"
+              << std::right << std::setw(12) << "NR_mu"
+              << std::setw(10) << "LM_mu"
+              << std::setw(10) << "GA_mu"
+              << std::setw(12) << "NR_sigma"
+              << std::setw(10) << "LM_sigma"
+              << std::setw(10) << "GA_sigma"
+              << "\n"
+              << std::string(72, '-') << "\n";
+
+    Eigen::VectorXd theta_bad(2);
+    theta_bad << 10.0, 5.0;
 
     for (int run = 0; run < 10; run++)
     {
-        // Nuevos datos en cada corrida
+        auto raw_i = rnorm_generator(N, TRUE_MU, TRUE_SIGMA);
+        std::vector<double> data_i(raw_i.get(), raw_i.get() + N);
+        auto fi = [&data_i](const Eigen::VectorXd &p)
+        {
+            return neg_log_likelihood_normal(p, data_i);
+        };
+
+        auto fmt = [](bool ok, double v) -> std::string
+        {
+            if (!ok)
+                return "  FALLÓ";
+            std::ostringstream ss;
+            ss << std::fixed << std::setprecision(4) << v;
+            return ss.str();
+        };
+
+        bool nr_ok = false, lm_ok = false, ga_ok = false;
+        double nr_mu = 0, nr_sigma = 0;
+        double lm_mu = 0, lm_sigma = 0;
+        double ga_mu = 0, ga_sigma = 0;
+
+        try
+        {
+            auto r = newton_raphson(fi, theta_bad);
+            nr_ok = true;
+            nr_mu = r(0);
+            nr_sigma = r(1);
+        }
+        catch (...)
+        {
+        }
+        try
+        {
+            auto r = levenberg_marquardt(fi, theta_bad, lm_params);
+            lm_ok = true;
+            lm_mu = r(0);
+            lm_sigma = r(1);
+        }
+        catch (...)
+        {
+        }
+        try
+        {
+            auto r = genetic_algorithm(fi, lower, upper, ga_params);
+            ga_ok = true;
+            ga_mu = r(0);
+            ga_sigma = r(1);
+        }
+        catch (...)
+        {
+        }
+
+        std::cout << std::left << std::setw(5) << run + 1
+                  << std::right << std::setw(12) << fmt(nr_ok, nr_mu)
+                  << std::setw(10) << fmt(lm_ok, lm_mu)
+                  << std::setw(10) << fmt(ga_ok, ga_mu)
+                  << std::setw(12) << fmt(nr_ok, nr_sigma)
+                  << std::setw(10) << fmt(lm_ok, lm_sigma)
+                  << std::setw(10) << fmt(ga_ok, ga_sigma)
+                  << "\n";
+    }
+
+    for (int n : {100, 500, 1000, 10000})
+    {
         auto raw_i = rnorm_generator(n, 3.0, 1.5);
         std::vector<double> data_i(raw_i.get(), raw_i.get() + n);
         auto fi = [&data_i](const Eigen::VectorXd &p)
@@ -149,19 +290,17 @@ int main()
 
         try
         {
-            // auto nr = newton_raphson(fi, theta0);
-            auto ga = genetic_algorithm(fi, lower, upper, ga_params);
-
-            std::cout << "  " << std::setw(3) << run + 1
-                      //   << std::setw(9) << nr(0)
-                      //   << std::setw(11) << nr(1)
-                      << std::setw(9) << ga(0)
-                      << std::setw(11) << ga(1) << "\n";
+            auto lm = levenberg_marquardt(fi, theta_bad, lm_params);
+            std::cout << "n=" << std::setw(6) << n
+                      << "  mu=" << lm(0)
+                      << "  sigma=" << lm(1) << "\n";
         }
         catch (const std::exception &e)
         {
-            std::cout << "  " << run + 1 << "  error: " << e.what() << "\n";
+            std::cout << "n=" << std::setw(6) << n
+                      << "  FALLÓ: " << e.what() << "\n";
         }
     }
+
     return 0;
 }
