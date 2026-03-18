@@ -104,5 +104,64 @@ int main()
               << "  mu = " << std::setprecision(4) << theta_hat(0)
               << "  sigma = " << theta_hat(1) << "\n";
 
+    // ─── Algoritmo Genético ───────────────────────────────────────────────
+    Eigen::VectorXd lower(2), upper(2);
+    lower << -10.0, 0.01;
+    upper << 10.0, 10.0;
+    Eigen::VectorXd theta0(2);
+    theta0 << 0.0, 1.0;
+
+    GAParams ga_params;
+    // Puedes modificar los parámetros o dejar los defaults
+    ga_params.population_size = 200;
+    ga_params.max_generations = 1000;
+    ga_params.tol = 1e-15;
+    ga_params.mutation_scale = 1;
+    // ga_params.mutation_rate   = 0.2;
+
+    try
+    {
+        auto theta_ga = genetic_algorithm(f, lower, upper, ga_params);
+        std::cout << "=== Algoritmo Genético ===\n";
+        std::cout << "  mu    = " << theta_ga(0) << "  (verdadero: 3.0)\n";
+        std::cout << "  sigma = " << theta_ga(1) << "  (verdadero: 1.5)\n\n";
+    }
+    catch (const std::exception &e)
+    {
+        std::cout << "Genético falló: " << e.what() << "\n\n";
+    }
+
+    // ─── Comparación ─────────────────────────────────────────────────────
+    // Correr ambos 10 veces y comparar resultados
+    std::cout << "=== Estabilidad (10 corridas) ===\n";
+    std::cout << std::fixed << std::setprecision(4);
+    std::cout << "  Run   NR_mu   NR_sigma   GA_mu   GA_sigma\n";
+
+    for (int run = 0; run < 10; run++)
+    {
+        // Nuevos datos en cada corrida
+        auto raw_i = rnorm_generator(n, 3.0, 1.5);
+        std::vector<double> data_i(raw_i.get(), raw_i.get() + n);
+        auto fi = [&data_i](const Eigen::VectorXd &p)
+        {
+            return neg_log_likelihood_normal(p, data_i);
+        };
+
+        try
+        {
+            // auto nr = newton_raphson(fi, theta0);
+            auto ga = genetic_algorithm(fi, lower, upper, ga_params);
+
+            std::cout << "  " << std::setw(3) << run + 1
+                      //   << std::setw(9) << nr(0)
+                      //   << std::setw(11) << nr(1)
+                      << std::setw(9) << ga(0)
+                      << std::setw(11) << ga(1) << "\n";
+        }
+        catch (const std::exception &e)
+        {
+            std::cout << "  " << run + 1 << "  error: " << e.what() << "\n";
+        }
+    }
     return 0;
 }
