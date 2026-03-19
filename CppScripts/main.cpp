@@ -110,6 +110,13 @@ int main()
 
     LMParams lm_params;
 
+    SGSParams sgs_params;
+    sgs_params.rho = 0.0001;     // learning rate muy pequeño
+    sgs_params.beta = 0.5;       // ruido inicial moderado
+    sgs_params.alpha = 0.1;      // decaimiento rápido del ruido
+    sgs_params.max_iter = 10000; // más iteraciones
+    sgs_params.tol = 1e-4;       // tolerancia más relajada
+
     // ─── Helper para imprimir una fila ────────────────────────────────────
     auto print_row = [&](const std::string &method,
                          bool ok,
@@ -198,6 +205,15 @@ int main()
         {
             print_row("Genético", false, 0, 0);
         }
+        try
+        {
+            auto sgs = stochastic_gradient_search(f, theta0, sgs_params);
+            print_row("Stochastic Gradient", true, sgs(0), sgs(1));
+        }
+        catch (...)
+        {
+            print_row("Stochastic Gradient", false, 0, 0);
+        }
     }
 
     // ─── Estabilidad: 10 corridas con punto inicial malo ─────────────────
@@ -206,9 +222,11 @@ int main()
               << std::right << std::setw(12) << "NR_mu"
               << std::setw(10) << "LM_mu"
               << std::setw(10) << "GA_mu"
+              << std::setw(10) << "SGS_mu"
               << std::setw(12) << "NR_sigma"
               << std::setw(10) << "LM_sigma"
               << std::setw(10) << "GA_sigma"
+              << std::setw(10) << "SGS_sigma"
               << "\n"
               << std::string(72, '-') << "\n";
 
@@ -233,10 +251,11 @@ int main()
             return ss.str();
         };
 
-        bool nr_ok = false, lm_ok = false, ga_ok = false;
+        bool nr_ok = false, lm_ok = false, ga_ok = false, sgs_ok = false;
         double nr_mu = 0, nr_sigma = 0;
         double lm_mu = 0, lm_sigma = 0;
         double ga_mu = 0, ga_sigma = 0;
+        double sgs_mu = 0, sgs_sigma = 0;
 
         try
         {
@@ -268,14 +287,26 @@ int main()
         catch (...)
         {
         }
+        try
+        {
+            auto r = stochastic_gradient_search(fi, theta_bad, sgs_params);
+            sgs_ok = true;
+            sgs_mu = r(0);
+            sgs_sigma = r(1);
+        }
+        catch (...)
+        {
+        }
 
         std::cout << std::left << std::setw(5) << run + 1
                   << std::right << std::setw(12) << fmt(nr_ok, nr_mu)
                   << std::setw(10) << fmt(lm_ok, lm_mu)
                   << std::setw(10) << fmt(ga_ok, ga_mu)
+                  << std::setw(10) << fmt(sgs_ok, sgs_mu)
                   << std::setw(12) << fmt(nr_ok, nr_sigma)
                   << std::setw(10) << fmt(lm_ok, lm_sigma)
                   << std::setw(10) << fmt(ga_ok, ga_sigma)
+                  << std::setw(10) << fmt(sgs_ok, sgs_sigma)
                   << "\n";
     }
 

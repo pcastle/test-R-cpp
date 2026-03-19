@@ -239,3 +239,45 @@ Eigen::VectorXd levenberg_marquardt(
 
     throw std::runtime_error("No convergetion");
 }
+
+Eigen::VectorXd stochastic_gradient_search(
+    std::function<double(const Eigen::VectorXd &)> f,
+    Eigen::VectorXd theta_init,
+    const SGSParams &params)
+{
+
+    int n = theta_init.size();
+    std::mt19937 gen(std::random_device{}());
+    std::normal_distribution<double> dist(0.0, 1.0);
+
+    Eigen::VectorXd theta = theta_init;
+    Eigen::VectorXd noise(n);
+
+    for (int k = 0; k < params.max_iter; k++)
+    {
+        // 1. Calcular gradiente numérico en theta actual
+        Eigen::VectorXd numerical_gradient = gradient(f, theta_init);
+        // 2. Calcular c_k = beta * exp(-alpha * k)
+        double ck = params.beta * std::exp(-params.alpha * k);
+        // 3. Generar vector de ruido N^k ~ N(0,1) de tamaño n
+
+        for (int i = 0; i < n; i++)
+        {
+            noise[i] = dist(gen);
+        }
+        // 4. Actualizar: theta = theta - rho * (grad + c_k * N)
+        Eigen::VectorXd new_theta = theta - params.rho * (numerical_gradient + ck * noise);
+        // 5. Criterio de convergencia sobre norma 2
+        double delta = (theta - new_theta).norm();
+        if (delta < params.tol)
+        {
+            if (params.verbose)
+                std::cout << "SGS convergió en iteración " << k << "\n";
+
+            return theta_init;
+        }
+        theta = new_theta;
+    }
+
+    throw std::runtime_error("SGS: no convergió");
+}

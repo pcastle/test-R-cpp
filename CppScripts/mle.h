@@ -53,3 +53,18 @@ Eigen::VectorXd levenberg_marquardt(
     std::function<double(const Eigen::VectorXd &)> f,
     Eigen::VectorXd theta_init,
     const LMParams &params = LMParams());
+
+struct SGSParams
+{
+    int max_iter = 1000;
+    double tol = 1e-6;
+    double rho = 0.01;   // learning rate
+    double beta = 1.0;   // magnitud inicial del ruido
+    double alpha = 0.01; // tasa de decaimiento del ruido
+    bool verbose = false;
+};
+
+Eigen::VectorXd stochastic_gradient_search(
+    std::function<double(const Eigen::VectorXd &)> f,
+    Eigen::VectorXd theta,
+    const SGSParams &params = SGSParams());
