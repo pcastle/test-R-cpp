@@ -103,6 +103,11 @@ Eigen::VectorXd genetic_algorithm(
     const Eigen::VectorXd &upper_bounds, // límite superior de búsqueda
     const GAParams &params)
 {
+    std::mt19937 gen(std::random_device{}());
+    std::uniform_int_distribution<int> pop_idx(0, params.population_size - 1);
+    std::uniform_real_distribution<double> dist_uniform(0.0, 1.0);
+    std::normal_distribution<double> dist_normal(0.0, params.mutation_scale);
+
     Eigen::MatrixXd population(params.population_size, lower_bounds.size());
     for (int i = 0; i < lower_bounds.size(); i++)
     {
@@ -111,12 +116,168 @@ Eigen::VectorXd genetic_algorithm(
     }
 
     Eigen::VectorXd fitness(params.population_size);
-
     for (int i = 0; i < params.population_size; i++)
     {
         fitness[i] = f(population.row(i).transpose());
     }
 
-    Eigen::VectorXd grad(2);
-    return grad;
+    Eigen::Index init_best_idx;
+    fitness.minCoeff(&init_best_idx);
+    Eigen::VectorXd prev_best_variables = population.row(init_best_idx).transpose();
+
+    auto tournament = [&]()
+    {
+        // first index is the 'champion'
+        int idx_champion = pop_idx(gen);
+        for (int t = 1; t < params.tournament_size; t++)
+        {
+            int idx_challenger = pop_idx(gen);
+            // fight - we are minimizing
+            if (fitness[idx_champion] > fitness[idx_challenger])
+            {
+                idx_champion = idx_challenger;
+            }
+        }
+        // Winner of the tournament
+        return idx_champion;
+    };
+
+    for (int i = 0; i < params.max_generations; i++)
+    {
+        Eigen::MatrixXd new_population(params.population_size, lower_bounds.size());
+
+        // new population
+        for (int j = 0; j < params.population_size; j++)
+        {
+            int parent_1 = tournament();
+            int parent_2 = tournament();
+
+            double w_crossover = dist_uniform(gen);
+            new_population.row(j) = w_crossover * population.row(parent_1) + (1 - w_crossover) * population.row(parent_2);
+
+            // Mutation
+            for (int k = 0; k < lower_bounds.size(); k++)
+            {
+                if (dist_uniform(gen) < params.mutation_rate)
+                {
+                    new_population(j, k) += dist_normal(gen);
+
+                    // This mutation fullfil the bounds
+                    new_population(j, k) = std::max(lower_bounds(k), std::min(new_population(j, k), upper_bounds(k)));
+                }
+            }
+        }
+
+        // Eigen::Index prev_best_idx;
+        // double prev_best_fitness = fitness.minCoeff(&prev_best_idx);
+        // Eigen::VectorXd prev_best_variables(lower_bounds.size());
+        // prev_best_variables = population.row(prev_best_idx).transpose();
+        for (int j = 0; j < params.population_size; j++)
+        {
+            double new_fitness = f(new_population.row(j).transpose());
+            if (fitness[j] > new_fitness)
+            {
+                population.row(j) = new_population.row(j);
+                fitness[j] = new_fitness;
+            }
+        }
+        Eigen::Index new_best_idx;
+        double new_best_fitness = fitness.minCoeff(&new_best_idx);
+
+        // Convergence
+        double delta = (prev_best_variables - population.row(new_best_idx).transpose()).norm();
+        prev_best_variables = population.row(new_best_idx).transpose();
+        if (i > 0 && delta < params.tol)
+        {
+            // std::cout << "Convergió en generación " << i << "\n";
+            return population.row(new_best_idx).transpose();
+        }
+    }
+
+    throw std::runtime_error("No convergetion");
+}
+
+Eigen::VectorXd levenberg_marquardt(
+    std::function<double(const Eigen::VectorXd &)> f,
+    Eigen::VectorXd theta_init,
+    const LMParams &params)
+{
+
+    double lambda = params.lambda0;
+    for (int i = 0; i < params.max_iter; i++)
+    {
+        Eigen::VectorXd numerical_gradient = gradient(f, theta_init);
+        Eigen::MatrixXd numerical_hessian = hessian(f, theta_init);
+        Eigen::MatrixXd regularization = numerical_hessian + Eigen::MatrixXd::Identity(theta_init.size(), theta_init.size()) * lambda;
+
+        Eigen::VectorXd new_theta = theta_init - regularization.colPivHouseholderQr().solve(numerical_gradient);
+
+        double prev_value = f(theta_init);
+        double new_value = f(new_theta);
+        if (new_value <= prev_value)
+        {
+            // Aceptar paso
+            lambda *= params.lambda_dn;
+
+            // Convergencia — solo cuando aceptamos
+            if ((new_theta - theta_init).norm() < params.tol)
+            {
+                // std::cout << "LM convergió en iteración " << i << "\n";
+                return new_theta;
+            }
+
+            theta_init = new_theta; // ← solo aquí
+        }
+        else
+        {
+            // Rechazar paso — NO actualizar theta
+            lambda *= params.lambda_up;
+            if (lambda > params.lambda_max)
+                throw std::runtime_error("LM: lambda máximo alcanzado");
+        }
+    }
+
+    throw std::runtime_error("No convergetion");
+}
+
+Eigen::VectorXd stochastic_gradient_search(
+    std::function<double(const Eigen::VectorXd &)> f,
+    Eigen::VectorXd theta_init,
+    const SGSParams &params)
+{
+
+    int n = theta_init.size();
+    std::mt19937 gen(std::random_device{}());
+    std::normal_distribution<double> dist(0.0, 1.0);
+
+    Eigen::VectorXd theta = theta_init;
+    Eigen::VectorXd noise(n);
+
+    for (int k = 0; k < params.max_iter; k++)
+    {
+        // 1. Calcular gradiente numérico en theta actual
+        Eigen::VectorXd numerical_gradient = gradient(f, theta_init);
+        // 2. Calcular c_k = beta * exp(-alpha * k)
+        double ck = params.beta * std::exp(-params.alpha * k);
+        // 3. Generar vector de ruido N^k ~ N(0,1) de tamaño n
+
+        for (int i = 0; i < n; i++)
+        {
+            noise[i] = dist(gen);
+        }
+        // 4. Actualizar: theta = theta - rho * (grad + c_k * N)
+        Eigen::VectorXd new_theta = theta - params.rho * (numerical_gradient + ck * noise);
+        // 5. Criterio de convergencia sobre norma 2
+        double delta = (theta - new_theta).norm();
+        if (delta < params.tol)
+        {
+            if (params.verbose)
+                std::cout << "SGS convergió en iteración " << k << "\n";
+
+            return theta_init;
+        }
+        theta = new_theta;
+    }
+
+    throw std::runtime_error("SGS: no convergió");
 }
